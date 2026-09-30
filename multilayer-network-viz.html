@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biological Network Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .file-inputs {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        .file-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .file-input-group label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .file-input-group input[type="file"] {
+            font-size: 14px;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .control-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .control-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 15px;
+        }
+
+        .checkbox-group label {
+            font-weight: normal;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .checkbox-group label:hover {
+            background-color: #f5f5f5;
+        }
+
+        /* Node type color indicators */
+        .node-type-label {
+            position: relative;
+            padding-left: 24px;
+        }
+
+        .node-type-label::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .node-type-prot::before {
+            background-color: #E53935;
+        }
+
+        .node-type-metab::before {
+            background-color: #FB8C00;
+        }
+
+        .node-type-risk::before {
+            background-color: #4FC3F7;
+        }
+
+        .node-type-disease::before {
+            background-color: #B388FF;
+        }
+
+        input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 250px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .ego-mode-indicator {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #856404;
+            display: none;
+        }
+
+        .ego-mode-indicator.active {
+            display: block;
+        }
+
+        .canvas-container {
+            flex: 1;
+            background: white;
+            margin: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        #network-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .stats {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Biological Multi-Layer Network Visualization</h1>
+        <div class="file-inputs">
+            <div class="file-input-group">
+                <label>Nodes CSV:</label>
+                <input type="file" id="nodes-file" accept=".csv">
+            </div>
+            <div class="file-input-group">
+                <label>Edges CSV:</label>
+                <input type="file" id="edges-file" accept=".csv">
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>Edge Mode:</label>
+            <div class="checkbox-group">
+                <label>
+                    <input type="checkbox" id="filter-conditional" checked>
+                    Conditional
+                </label>
+                <label>
+                    <input type="checkbox" id="filter-causal" checked>
+                    Causal
+                </label>
+                <label>
+                    <input type="checkbox" id="filter-colocalizing" checked>
+                    Colocalizing
+                </label>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Node Type:</label>
+            <div class="checkbox-group">
+                <label class="node-type-label node-type-prot">
+                    <input type="checkbox" id="filter-prot" checked>
+                    Prot
+                </label>
+                <label class="node-type-label node-type-metab">
+                    <input type="checkbox" id="filter-metab" checked>
+                    Metab
+                </label>
+                <label class="node-type-label node-type-risk">
+                    <input type="checkbox" id="filter-risk" checked>
+                    Risk Factor
+                </label>
+                <label class="node-type-label node-type-disease">
+                    <input type="checkbox" id="filter-disease" checked>
+                    Disease
+                </label>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Search Nodes:</label>
+            <input type="text" id="search-nodes" placeholder="Type node name...">
+        </div>
+
+        <div class="control-group">
+            <label>Ego Network Hops:</label>
+            <select id="ego-hops">
+                <option value="1">1 hop</option>
+                <option value="2">2 hops</option>
+            </select>
+        </div>
+
+        <div class="ego-mode-indicator" id="ego-indicator">
+            Ego view: <strong id="ego-node-name"></strong>
+        </div>
+
+        <button id="reset-view">Reset View</button>
+        <button id="exit-ego" style="display: none;">Exit Ego View</button>
+    </div>
+
+    <div class="canvas-container">
+        <div class="loading" id="loading">Load CSV files to begin</div>
+        <div class="stats" id="stats" style="display: none;">
+            Nodes: <span id="node-count">0</span> | Edges: <span id="edge-count">0</span>
+        </div>
+        <svg id="network-canvas"></svg>
+    </div>
+
+    <script>
+        // Global data storage - ORIGINAL DATA
+        let originalNodesData = [];
+        let originalEdgesData = [];
+        
+        // Current view data
+        let currentNodesData = [];
+        let currentEdgesData = [];
+        
+        // Ego mode state
+        let egoMode = false;
+        let egoNodeName = null;
+
+        // References to DOM elements
+        const nodesFileInput = document.getElementById('nodes-file');
+        const edgesFileInput = document.getElementById('edges-file');
+        const filterConditional = document.getElementById('filter-conditional');
+        const filterCausal = document.getElementById('filter-causal');
+        const filterColocalizing = document.getElementById('filter-colocalizing');
+        const filterProt = document.getElementById('filter-prot');
+        const filterMetab = document.getElementById('filter-metab');
+        const filterRisk = document.getElementById('filter-risk');
+        const filterDisease = document.getElementById('filter-disease');
+        const searchInput = document.getElementById('search-nodes');
+        const egoHopsSelect = document.getElementById('ego-hops');
+        const egoIndicator = document.getElementById('ego-indicator');
+        const egoNodeNameSpan = document.getElementById('ego-node-name');
+        const resetButton = document.getElementById('reset-view');
+        const exitEgoButton = document.getElementById('exit-ego');
+        const loading = document.getElementById('loading');
+        const stats = document.getElementById('stats');
+        const nodeCount = document.getElementById('node-count');
+        const edgeCount = document.getElementById('edge-count');
+
+        // File loading handlers
+        nodesFileInput.addEventListener('change', (e) => loadCSV(e.target.files[0], 'nodes'));
+        edgesFileInput.addEventListener('change', (e) => loadCSV(e.target.files[0], 'edges'));
+
+        // Filter handlers
+        filterConditional.addEventListener('change', applyFilters);
+        filterCausal.addEventListener('change', applyFilters);
+        filterColocalizing.addEventListener('change', applyFilters);
+        filterProt.addEventListener('change', applyFilters);
+        filterMetab.addEventListener('change', applyFilters);
+        filterRisk.addEventListener('change', applyFilters);
+        filterDisease.addEventListener('change', applyFilters);
+        searchInput.addEventListener('input', applyFilters);
+        egoHopsSelect.addEventListener('change', () => {
+            if (egoMode) {
+                enterEgoMode(egoNodeName);
+            }
+        });
+        resetButton.addEventListener('click', resetView);
+        exitEgoButton.addEventListener('click', exitEgoMode);
+
+        function loadCSV(file, type) {
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (type === 'nodes') {
+                        originalNodesData = results.data;
+                        console.log('Nodes loaded:', originalNodesData.length);
+                    } else {
+                        originalEdgesData = results.data;
+                        console.log('Edges loaded:', originalEdgesData.length);
+                    }
+
+                    if (originalNodesData.length > 0 && originalEdgesData.length > 0) {
+                        initializeVisualization();
+                    }
+                }
+            });
+        }
+
+        function initializeVisualization() {
+            loading.style.display = 'none';
+            stats.style.display = 'block';
+            exitEgoMode(); // Start in normal mode
+        }
+
+        function enterEgoMode(nodeName) {
+            egoMode = true;
+            egoNodeName = nodeName;
+            
+            // Get ego network with specified hops
+            const hops = parseInt(egoHopsSelect.value);
+            const egoNetwork = getEgoNetwork(nodeName, hops);
+            
+            // Set current data to ego network
+            currentNodesData = egoNetwork.nodes;
+            currentEdgesData = egoNetwork.edges;
+            
+            // Update UI
+            egoNodeNameSpan.textContent = nodeName;
+            egoIndicator.classList.add('active');
+            exitEgoButton.style.display = 'inline-block';
+            
+            // Apply filters on ego data
+            applyFilters();
+        }
+
+        function exitEgoMode() {
+            egoMode = false;
+            egoNodeName = null;
+            
+            // Reset to original data
+            currentNodesData = originalNodesData;
+            currentEdgesData = originalEdgesData;
+            
+            // Update UI
+            egoIndicator.classList.remove('active');
+            exitEgoButton.style.display = 'none';
+            
+            // Apply filters on full data
+            applyFilters();
+        }
+
+        function getEgoNetwork(centerNodeName, hops) {
+            const egoNodes = new Set([centerNodeName]);
+            const egoEdges = [];
+
+            // Build adjacency list from ALL edges
+            const adjacency = new Map();
+            originalEdgesData.forEach(edge => {
+                if (!adjacency.has(edge.name_node1)) {
+                    adjacency.set(edge.name_node1, []);
+                }
+                if (!adjacency.has(edge.name_node2)) {
+                    adjacency.set(edge.name_node2, []);
+                }
+                adjacency.get(edge.name_node1).push({node: edge.name_node2, edge});
+                adjacency.get(edge.name_node2).push({node: edge.name_node1, edge});
+            });
+
+            // BFS to find nodes within n hops
+            let currentLevel = [centerNodeName];
+            for (let i = 0; i < hops; i++) {
+                const nextLevel = [];
+                currentLevel.forEach(nodeName => {
+                    const neighbors = adjacency.get(nodeName) || [];
+                    neighbors.forEach(({node, edge}) => {
+                        if (!egoNodes.has(node)) {
+                            nextLevel.push(node);
+                            egoNodes.add(node);
+                        }
+                    });
+                });
+                currentLevel = nextLevel;
+            }
+
+            // Collect edges between nodes in ego network
+            originalEdgesData.forEach(edge => {
+                if (egoNodes.has(edge.name_node1) && egoNodes.has(edge.name_node2)) {
+                    egoEdges.push(edge);
+                }
+            });
+
+            return {
+                nodes: originalNodesData.filter(n => egoNodes.has(n.Node_name)),
+                edges: egoEdges
+            };
+        }
+
+        function applyFilters() {
+            // Start with current data (either full or ego)
+            let filteredEdges = currentEdgesData;
+            let filteredNodes = currentNodesData;
+
+            // Filter edges by mode
+            filteredEdges = filteredEdges.filter(edge => {
+                const includeConditional = filterConditional.checked && edge.mode === 'conditional';
+                const includeCausal = filterCausal.checked && edge.mode === 'causal';
+                const includeColocalizing = filterColocalizing.checked && edge.mode === 'colocalizing';
+                return includeConditional || includeCausal || includeColocalizing;
+            });
+
+            // Get nodes that are connected by filtered edges
+            const activeNodeNames = new Set();
+            filteredEdges.forEach(edge => {
+                activeNodeNames.add(edge.name_node1);
+                activeNodeNames.add(edge.name_node2);
+            });
+
+            // Filter nodes by search term, node type, and whether they're in the active edges
+            const searchTerm = searchInput.value.toLowerCase();
+            filteredNodes = filteredNodes.filter(node => {
+                const matchesSearch = node.Node_name.toLowerCase().includes(searchTerm);
+                const isActive = activeNodeNames.has(node.Node_name);
+                
+                // Check node type filters
+                let matchesType = false;
+                if (filterProt.checked && node.Node_type === 'Prot') matchesType = true;
+                if (filterMetab.checked && node.Node_type === 'Metab') matchesType = true;
+                if (filterRisk.checked && node.Node_type === 'Risk Factor') matchesType = true;
+                if (filterDisease.checked && node.Node_type === 'Disease') matchesType = true;
+                
+                return matchesSearch && isActive && matchesType;
+            });
+
+            // Re-filter edges to only include those between visible nodes
+            const visibleNodeNames = new Set(filteredNodes.map(n => n.Node_name));
+            filteredEdges = filteredEdges.filter(edge => 
+                visibleNodeNames.has(edge.name_node1) && visibleNodeNames.has(edge.name_node2)
+            );
+
+            // Update stats
+            nodeCount.textContent = filteredNodes.length;
+            edgeCount.textContent = filteredEdges.length;
+
+            // Render the network
+            renderNetwork(filteredNodes, filteredEdges);
+        }
+
+        // D3 visualization setup
+        const svg = d3.select('#network-canvas');
+        let g = svg.append('g');
+        let zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+            });
+        svg.call(zoom);
+
+        // Layer configuration with colors
+        const layerOrder = ['Prot', 'Metab', 'Risk Factor', 'Disease'];
+        const layerConfig = {
+            'Prot': { yCenter: 0.85, ySpread: 0.08, color: '#E53935' },
+            'Metab': { yCenter: 0.60, ySpread: 0.08, color: '#FB8C00' },
+            'Risk Factor': { yCenter: 0.35, ySpread: 0.08, color: '#4FC3F7' },
+            'Disease': { yCenter: 0.10, ySpread: 0.08, color: '#B388FF' }
+        };
+
+        function calculateNodePositions(nodes) {
+            const width = svg.node().clientWidth;
+            const height = svg.node().clientHeight;
+
+            // Group nodes by layer
+            const nodesByLayer = {};
+            layerOrder.forEach(layer => {
+                nodesByLayer[layer] = nodes.filter(n => n.Node_type === layer);
+            });
+
+            // Assign positions to each node
+            nodes.forEach(node => {
+                const layer = layerConfig[node.Node_type];
+                if (!layer) {
+                    console.warn('Unknown node type:', node.Node_type);
+                    node.x = width / 2;
+                    node.y = height / 2;
+                    return;
+                }
+
+                const layerNodes = nodesByLayer[node.Node_type];
+                const nodeIndex = layerNodes.indexOf(node);
+                const totalInLayer = layerNodes.length;
+
+                // Horizontal position: spread across width with some padding
+                const padding = 100;
+                const availableWidth = width - 2 * padding;
+                
+                if (totalInLayer === 1) {
+                    node.x = width / 2;
+                } else {
+                    node.x = padding + (nodeIndex / (totalInLayer - 1)) * availableWidth;
+                }
+
+                // Add horizontal jitter for visual separation
+                node.x += (Math.random() - 0.5) * 30;
+
+                // Vertical position: within layer band
+                node.y = height * layer.yCenter;
+                
+                // Add vertical jitter within the band
+                const verticalJitter = (Math.random() - 0.5) * height * layer.ySpread;
+                node.y += verticalJitter;
+            });
+
+            return nodes;
+        }
+
+        function renderNetwork(nodes, edges) {
+            console.log('Rendering network with:', nodes.length, 'nodes and', edges.length, 'edges');
+            
+            if (nodes.length === 0) {
+                g.selectAll('*').remove();
+                return;
+            }
+
+            // Calculate positions
+            const positionedNodes = calculateNodePositions([...nodes]);
+            
+            // Create a map for quick node lookup
+            const nodeMap = new Map(positionedNodes.map(n => [n.Node_name, n]));
+
+            // Prepare edge data with coordinates
+            const edgesWithCoords = edges
+                .filter(e => nodeMap.has(e.name_node1) && nodeMap.has(e.name_node2))
+                .map(e => ({
+                    ...e,
+                    source: nodeMap.get(e.name_node1),
+                    target: nodeMap.get(e.name_node2)
+                }));
+
+            // Clear previous render
+            g.selectAll('*').remove();
+
+            // Calculate weight range for color scaling
+            if (edgesWithCoords.length > 0) {
+                const weights = edgesWithCoords.map(e => Math.abs(parseFloat(e.weight)));
+                const maxWeight = Math.max(...weights);
+                const minWeight = Math.min(...weights);
+                
+                // Create grayscale color scale
+                const colorScale = d3.scaleLinear()
+                    .domain([minWeight, maxWeight])
+                    .range(['#e0e0e0', '#000000']);
+
+                // Draw edges
+                g.append('g')
+                    .attr('class', 'edges')
+                    .selectAll('line')
+                    .data(edgesWithCoords)
+                    .enter()
+                    .append('line')
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y)
+                    .attr('stroke', d => colorScale(Math.abs(parseFloat(d.weight))))
+                    .attr('stroke-width', 1.5)
+                    .attr('opacity', 0.8);
+            }
+
+            // Draw nodes with type-based colors
+            const nodeElements = g.append('g')
+                .attr('class', 'nodes')
+                .selectAll('circle')
+                .data(positionedNodes)
+                .enter()
+                .append('circle')
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y)
+                .attr('r', d => (egoMode && d.Node_name === egoNodeName) ? 10 : 8)
+                .attr('fill', d => layerConfig[d.Node_type]?.color || '#999')
+                .attr('stroke', d => (egoMode && d.Node_name === egoNodeName) ? '#FFD700' : '#fff')
+                .attr('stroke-width', d => (egoMode && d.Node_name === egoNodeName) ? 3 : 2)
+                .style('cursor', 'pointer');
+
+            // Add labels - VISIBLE IN EGO MODE, hidden otherwise
+            const labelElements = g.append('g')
+                .attr('class', 'labels')
+                .selectAll('text')
+                .data(positionedNodes)
+                .enter()
+                .append('text')
+                .attr('x', d => d.x)
+                .attr('y', d => d.y - 12)
+                .attr('text-anchor', 'middle')
+                .attr('font-size', '11px')
+                .attr('font-weight', '600')
+                .attr('fill', '#333')
+                .attr('stroke', '#fff')
+                .attr('stroke-width', '3')
+                .attr('paint-order', 'stroke')
+                .style('pointer-events', 'none')
+                .style('opacity', egoMode ? 1 : 0)
+                .text(d => d.Node_name);
+
+            // Highlight searched nodes (only in normal mode)
+            if (!egoMode) {
+                const searchTerm = searchInput.value.toLowerCase();
+                if (searchTerm) {
+                    positionedNodes.forEach((node, i) => {
+                        if (node.Node_name.toLowerCase().includes(searchTerm)) {
+                            d3.select(nodeElements.nodes()[i])
+                                .attr('r', 10)
+                                .attr('stroke-width', 3)
+                                .attr('stroke', '#ff9800');
+                            
+                            d3.select(labelElements.nodes()[i])
+                                .style('opacity', 1);
+                        }
+                    });
+                }
+            }
+
+            // Add interactivity
+            nodeElements.on('mouseenter', function(event, d) {
+                const index = positionedNodes.indexOf(d);
+                
+                if (!egoMode || d.Node_name !== egoNodeName) {
+                    d3.select(this)
+                        .attr('r', 12)
+                        .attr('stroke-width', 3);
+                }
+                
+                if (!egoMode) {
+                    d3.select(labelElements.nodes()[index])
+                        .style('opacity', 1);
+                }
+            })
+            .on('mouseleave', function(event, d) {
+                const index = positionedNodes.indexOf(d);
+                const searchTerm = searchInput.value.toLowerCase();
+                const isSearched = !egoMode && d.Node_name.toLowerCase().includes(searchTerm) && searchTerm !== '';
+                const isCenterNode = egoMode && d.Node_name === egoNodeName;
+                
+                if (!isSearched && !isCenterNode) {
+                    d3.select(this)
+                        .attr('r', 8)
+                        .attr('stroke-width', 2)
+                        .attr('stroke', '#fff');
+                    
+                    if (!egoMode) {
+                        d3.select(labelElements.nodes()[index])
+                            .style('opacity', 0);
+                    }
+                } else if (isSearched) {
+                    d3.select(this)
+                        .attr('r', 10)
+                        .attr('stroke-width', 3)
+                        .attr('stroke', '#ff9800');
+                }
+            })
+            .on('click', function(event, d) {
+                event.stopPropagation();
+                enterEgoMode(d.Node_name);
+            });
+
+            // Fit view to content
+            resetView();
+        }
+
+        function resetView() {
+            const width = svg.node().clientWidth;
+            const height = svg.node().clientHeight;
+            
+            svg.transition()
+                .duration(750)
+                .call(zoom.transform, d3.zoomIdentity.translate(0, 0).scale(1));
+        }
+    </script>
+</body>
+</html>
