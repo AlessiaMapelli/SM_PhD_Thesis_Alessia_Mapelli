@@ -1,6 +1,6 @@
 # Supplementary Materials — PhD Thesis
 
-This repository contains supplementary materials accompanying the PhD thesis of **Alessia Mapelli**, *Graphical models for the representation of complex biological systems: Linking molecular mechanisms to clinical phenotypes*.
+This repository contains supplementary materials accompanying the PhD thesis of **Alessia Mapelli**, *Graphical models for the representation of complex biological systems: linking molecular mechanisms to clinical phenotypes*.
 
 ## Contents
 
